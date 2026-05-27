@@ -1,35 +1,37 @@
 # SMSBazaar
 
-SMSBazaar is a single-page dashboard for comparing `OPENAI(ChatGPT)` SMS verification prices and stock across multiple SMS providers.
+SMSBazaar 是一个用于对比 `OPENAI(ChatGPT)` 短信接码价格和库存的单页面看板。
 
-It aggregates provider API snapshots on the server, normalizes countries to ISO2, converts prices to CNY and USD, and renders a country-first comparison table with expandable provider details.
+项目通过服务端定时拉取多家短信平台 API，把不同平台的国家、价格、库存统一归一化，然后在前端按国家维度展示最低价、总库存、在线平台数和各平台明细。
 
-## Features
+## 功能特性
 
-- Compare `OPENAI(ChatGPT)` prices and stock by country.
-- Supports 7 providers: Hero SMS, SMSBower, 5sim, NexSMS, GrizzlySMS, SMS Verification Number, and SMSPool.
-- Country names are shown in Chinese with English names in parentheses.
-- Register mode is filtered by OpenAI-supported countries.
-- Bind mode uses a maintained whitelist.
-- Recommended mode is driven by a simple text config.
-- Backend refreshes snapshots automatically every minute by default.
-- Manual refresh API is protected by an administrator token.
-- Frontend supports system, light, and dark themes.
+- 固定对比 `OPENAI(ChatGPT)` 服务的接码价格和库存。
+- 已接入 7 家短信平台：Hero SMS、SMSBower、5sim、NexSMS、GrizzlySMS、SMS Verification Number、SMSPool。
+- 国家统一使用 ISO2 做主键，解决各平台国家 ID 不一致的问题。
+- 国家名称显示为中文名，后面带英文名。
+- 价格默认显示人民币，同时显示美元换算价。
+- 支持按国家、平台、状态和价格/库存排序筛选。
+- 支持展开国家查看各平台明细，平台多档价格默认折叠。
+- 支持三种业务模式：先手机号注册 OAuth、后手机号绑定 OAuth、目前推荐国家。
+- 后端默认每 1 分钟自动刷新一次快照。
+- 保留管理员手动刷新接口，公网默认需要管理员密钥。
+- 前端支持跟随系统、亮色、暗色主题。
 
-## Architecture
+## 技术架构
 
-- Frontend: React SPA built with Vite.
-- Backend: Express API and static file server.
-- Storage: SQLite for provider snapshots, refresh state, exchange rates, and service metadata.
-- Runtime: One Node.js process can serve both API and frontend assets after build.
+- 前端：React SPA + Vite。
+- 后端：Express API + 静态文件托管。
+- 存储：SQLite，保存最近快照、刷新状态、汇率缓存和服务配置。
+- 部署：构建后一个 Node.js 进程即可同时提供 API 和前端页面。
 
-## Requirements
+## 环境要求
 
-- Node.js 20 or newer.
-- npm.
-- API keys for the providers you want to enable.
+- Node.js 20 或更新版本。
+- npm。
+- 至少配置你需要启用的平台 API key。
 
-## Local Development
+## 本地开发
 
 ```bash
 npm install
@@ -37,9 +39,13 @@ cp .env.example .env
 npm run dev
 ```
 
-The frontend dev server runs on `http://localhost:5173` and proxies API requests to `http://localhost:8787`.
+本地开发时：
 
-## Production Build
+- 前端地址：`http://localhost:5173`
+- 后端地址：`http://localhost:8787`
+- Vite 会把 `/api` 请求代理到后端。
+
+## 生产构建
 
 ```bash
 npm install
@@ -47,11 +53,11 @@ npm run build
 npm start
 ```
 
-By default the production server listens on `PORT=8787` and serves `dist/client`.
+默认生产服务监听 `PORT=8787`，并托管 `dist/client` 下的前端构建产物。
 
-## Environment Variables
+## 环境变量
 
-Copy `.env.example` to `.env` on the server and fill in the provider keys.
+在服务器上复制 `.env.example` 为 `.env`，然后填写真实 API key。
 
 ```env
 PORT=8787
@@ -65,7 +71,7 @@ ADMIN_REFRESH_TOKEN=
 EXPOSE_PROVIDER_ERRORS=false
 ```
 
-Provider API keys:
+平台 API key：
 
 ```env
 HERO_SMS_API_KEY=
@@ -77,7 +83,7 @@ SMS_VERIFICATION_API_KEY=
 SMSPOOL_API_KEY=
 ```
 
-Provider service codes can also be overridden:
+平台服务码也可以通过环境变量覆盖：
 
 ```env
 HERO_SMS_SERVICE_CODE=dr
@@ -89,29 +95,35 @@ SMS_VERIFICATION_SERVICE_CODE=dr
 SMSPOOL_SERVICE_CODE=dr
 ```
 
-## Recommended Countries
+## 推荐国家配置
 
-The recommended country list is loaded from `data/recommended-country-paths.txt`.
+目前推荐国家从 `data/recommended-country-paths.txt` 读取。
 
-Each non-comment line uses:
+每一行格式：
 
 ```txt
 ISO2 PATH
 ```
 
-`PATH` values:
+`PATH` 含义：
 
-- `0` means register path.
-- `1` means bind path.
+- `0`：推荐走先手机号注册 OAuth。
+- `1`：推荐走后手机号绑定 OAuth。
 
-Example:
+示例：
 
 ```txt
 GB 1
 PH 0
 ```
 
-The frontend displays business labels only and does not expose the raw file path.
+前端只显示业务文案，不展示原始 `0/1`，也不暴露服务器上的配置文件路径。
+
+## OpenAI 支持国家
+
+先手机号注册 OAuth 模式会读取 `data/openai-supported-api-countries.txt`。
+
+该文件一行一个 ISO2 国家或地区代码，用于排除 OpenAI 官方不支持的国家和地区。
 
 ## API
 
@@ -121,32 +133,37 @@ GET /api/compare?mode=register|bind|recommended&country=US&provider=smsbower&sta
 POST /api/refresh
 ```
 
-`POST /api/refresh` requires one of:
+`POST /api/refresh` 需要管理员密钥，二选一传入：
 
 ```http
 x-admin-refresh-token: your-token
 Authorization: Bearer your-token
 ```
 
-## VPS Deployment Notes
+如果 `ADMIN_REFRESH_TOKEN` 为空，手动刷新接口会返回 `503 admin_refresh_not_configured`。
 
-Recommended setup:
+## VPS 部署建议
 
-- Run the Node process with `pm2` or `systemd`.
-- Put Nginx in front of the Node server.
-- Enable HTTPS.
-- Store `.env` and the SQLite database outside disposable deployment directories.
-- Keep `EXPOSE_PROVIDER_ERRORS=false` on public deployments.
-- Set a strong `ADMIN_REFRESH_TOKEN`.
+推荐部署方式：
 
-Example PM2 command:
+- 使用 `pm2` 或 `systemd` 守护 Node.js 进程。
+- 使用 Nginx 反向代理到 `127.0.0.1:8787`。
+- 开启 HTTPS。
+- `.env` 不要提交到仓库。
+- SQLite 数据库建议放在持久化目录，例如 `/var/lib/smsbazaar/app.sqlite`。
+- 公网部署保持 `EXPOSE_PROVIDER_ERRORS=false`，避免暴露上游平台的详细错误。
+- 设置强随机 `ADMIN_REFRESH_TOKEN`。
+
+PM2 示例：
 
 ```bash
+npm install
+npm run build
 pm2 start src/server.js --name smsbazaar
 pm2 save
 ```
 
-Example Nginx reverse proxy:
+Nginx 反向代理示例：
 
 ```nginx
 server {
@@ -163,6 +180,12 @@ server {
   }
 }
 ```
+
+## 开源注意事项
+
+- `.env`、SQLite 数据库、构建产物、日志文件和 `node_modules` 已被 `.gitignore` 忽略。
+- `data/*.txt` 是公开配置模板，会进入仓库。
+- 生产依赖可用 `npm audit --omit=dev` 检查。
 
 ## License
 
