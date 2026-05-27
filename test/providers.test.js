@@ -1,0 +1,152 @@
+import { describe, expect, it, vi } from 'vitest';
+import { fetchProviderOffers as fetchFiveSim } from '../src/lib/providers/fivesim';
+import { fetchProviderOffers as fetchNexSms } from '../src/lib/providers/nexsms';
+import { fetchProviderOffers as fetchSmsVerification } from '../src/lib/providers/sms-verification-number';
+import { fetchProviderOffers as fetchHero } from '../src/lib/providers/hero-sms';
+import { fetchProviderOffers as fetchGrizzly } from '../src/lib/providers/grizzlysms';
+import { fetchProviderOffers as fetchSmsPool } from '../src/lib/providers/smspool';
+import { extractCountriesForService } from '../src/lib/providers/smsbower';
+
+const exchangeRateService = {
+  convertToUsd: async (amount) => Number(amount),
+};
+
+function mockFetchSequence(responses) {
+  global.fetch = vi.fn();
+  for (const response of responses) {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify(response),
+    });
+  }
+}
+
+describe('provider adapters', () => {
+  it('parses smsbower country sheet', () => {
+    const countries = extractCountriesForService({
+      services: {
+        '247': {
+          countries: {
+            1: {
+              id: 1,
+              iso: 'US',
+              title: 'United States',
+              positions: {
+                1: { price: 0.25, count: 10, agent_ids: [11] },
+              },
+            },
+          },
+        },
+      },
+    }, 247);
+
+    expect(countries).toHaveLength(1);
+    expect(countries[0].iso).toBe('US');
+    expect(countries[0].tiers[0].stock).toBe(10);
+  });
+
+  it('parses 5sim product prices', async () => {
+    mockFetchSequence([
+      {
+        openai: {
+          england: {
+            virtual34: { cost: 0.12, count: 7, rate: 99.9 },
+          },
+        },
+      },
+    ]);
+
+    const result = await fetchFiveSim({
+      mapping: { providerKey: '5sim', displayName: '5SIM', serviceCode: 'openai', baseUrl: 'https://5sim.net/v1' },
+      exchangeRateService,
+    });
+
+    expect(result.error).toBe('');
+    expect(result.offers[0].countryIso2).toBe('GB');
+    expect(result.offers[0].tiers[0].providerRef).toBe('virtual34');
+  });
+
+  it('parses nexsms country price map', async () => {
+    mockFetchSequence([
+      { data: [{ id: 1, name: 'United States' }] },
+      { data: [{ code: 'dr', name: 'OpenAI (ChatGPT)' }] },
+      { data: { countryId: 1, countryName: 'United States', priceMap: { '0.12': 8, '0.16': 3 } } },
+    ]);
+
+    const result = await fetchNexSms({
+      mapping: { providerKey: 'nexsms', displayName: 'NexSMS', serviceCode: 'dr', baseUrl: 'https://api.nexsms.net/api' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+
+    expect(result.error).toBe('');
+    expect(result.offers[0].tiers).toHaveLength(2);
+  });
+
+  it('parses sms-verification-number prices', async () => {
+    mockFetchSequence([
+      [{ id: 1, name: 'United States' }],
+      [{ id: 'dr', name: 'ChatGPT (openAI.com)', price: 0.22, quantity: 15 }],
+    ]);
+
+    const result = await fetchSmsVerification({
+      mapping: { providerKey: 'sms-verification-number', displayName: 'SMS Verification Number', serviceCode: 'dr', baseUrl: 'https://sms-verification-number.com/stubs/handler_api' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+
+    expect(result.error).toBe('');
+    expect(result.offers[0].countryIso2).toBe('US');
+  });
+
+  it('parses activate-compatible providers', async () => {
+    const originalHeroApiKey = process.env.HERO_SMS_API_KEY;
+    mockFetchSequence([
+      { 1: { eng: 'United States' } },
+      { 1: { dr: { cost: 0.31, count: 4 } } },
+    ]);
+    const heroResult = await fetchHero({
+      mapping: { providerKey: 'hero-sms', displayName: 'Hero SMS', serviceCode: 'dr', baseUrl: 'https://hero-sms.com/stubs/handler_api.php' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+    expect(heroResult.error).toBe('');
+    expect(heroResult.offers[0].countryIso2).toBe('US');
+
+    const compatiblePayload = {
+      usa: {
+        dr: {
+          price: 0.31,
+          count: 4,
+        },
+      },
+    };
+
+    mockFetchSequence([
+      { 1: { eng: 'United States' } },
+      compatiblePayload,
+    ]);
+    const grizzlyResult = await fetchGrizzly({
+      mapping: { providerKey: 'grizzlysms', displayName: 'Grizzly SMS', serviceCode: 'dr', baseUrl: 'https://api.grizzlysms.com/stubs/handler_api.php' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+    expect(grizzlyResult.error).toBe('');
+
+    mockFetchSequence([
+      { 1: { eng: 'United States' } },
+      { usa: { dr: { cost: 0.4, count: 6 } } },
+    ]);
+    process.env.HERO_SMS_API_KEY = 'helper-key';
+    const poolResult = await fetchSmsPool({
+      mapping: { providerKey: 'smspool', displayName: 'SMSPool', serviceCode: 'dr', baseUrl: 'https://api.smspool.net/stubs/handler_api' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+    expect(poolResult.error).toBe('');
+    expect(poolResult.offers[0].inventoryTotal).toBe(6);
+    process.env.HERO_SMS_API_KEY = originalHeroApiKey;
+  });
+});
