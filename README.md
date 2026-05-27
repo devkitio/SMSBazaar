@@ -189,6 +189,10 @@ server {
 - `data/*.txt` 是公开配置模板，会进入仓库。
 - 生产依赖可用 `npm audit --omit=dev` 检查。
 
+## 友情链接
+
+- [LINUX DO - 新的理想型社区](https://linux.do/)
+
 ## License
 
 MIT
