@@ -151,8 +151,9 @@ module.exports = {
     {
       providerKey: 'smspool',
       displayName: 'SMSPool',
-      serviceCode: process.env.SMSPOOL_SERVICE_CODE || 'dr',
-      baseUrl: 'https://api.smspool.net/stubs/handler_api',
+      serviceCode: process.env.SMSPOOL_SERVICE_CODE || '671',
+      nativeServiceName: process.env.SMSPOOL_NATIVE_SERVICE_NAME || 'OpenAI / ChatGPT',
+      baseUrl: 'https://api.smspool.net',
       keyEnv: 'SMSPOOL_API_KEY',
     },
   ],

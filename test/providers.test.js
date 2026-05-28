@@ -136,17 +136,28 @@ describe('provider adapters', () => {
     expect(grizzlyResult.error).toBe('');
 
     mockFetchSequence([
-      { 1: { eng: 'United States' } },
-      { usa: { dr: { cost: 0.4, count: 6 } } },
+      [
+        {
+          service: 671,
+          service_name: 'OpenAI / ChatGPT',
+          country: 2,
+          country_name: 'United Kingdom',
+          short_name: 'GB',
+          pool: 3,
+          price: '0.07',
+        },
+      ],
+      { success: 1, amount: 42 },
     ]);
-    process.env.HERO_SMS_API_KEY = 'helper-key';
     const poolResult = await fetchSmsPool({
-      mapping: { providerKey: 'smspool', displayName: 'SMSPool', serviceCode: 'dr', baseUrl: 'https://api.smspool.net/stubs/handler_api' },
+      mapping: { providerKey: 'smspool', displayName: 'SMSPool', serviceCode: '671', baseUrl: 'https://api.smspool.net' },
       exchangeRateService,
       apiKey: 'key',
     });
     expect(poolResult.error).toBe('');
-    expect(poolResult.offers[0].inventoryTotal).toBe(6);
+    expect(poolResult.offers[0].countryIso2).toBe('GB');
+    expect(poolResult.offers[0].inventoryTotal).toBe(42);
+    expect(poolResult.offers[0].tiers[0].providerRef).toBe('3 / total stock');
     process.env.HERO_SMS_API_KEY = originalHeroApiKey;
   });
 });
