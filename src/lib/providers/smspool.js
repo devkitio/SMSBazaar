@@ -145,6 +145,24 @@ function getPreviousStock(previousOffer) {
   };
 }
 
+function getPoolIdFromProviderRef(providerRef) {
+  const match = String(providerRef || '').trim().match(/^(\d+)/);
+  return match ? match[1] : '';
+}
+
+function getPreviousTierStockMap(previousOffer) {
+  const tiers = Array.isArray(previousOffer?.tiers) ? previousOffer.tiers : [];
+  const stockByPool = new Map();
+
+  for (const tier of tiers) {
+    const pool = getPoolIdFromProviderRef(tier.providerRef);
+    if (!pool) continue;
+    stockByPool.set(pool, Number(tier.stock || 0));
+  }
+
+  return stockByPool;
+}
+
 async function fetchPoolNames(baseUrl, countryId, serviceId) {
   try {
     const payload = await postJson(baseUrl, '/pool/retrieve_valid', {
@@ -207,7 +225,7 @@ async function fetchProviderOffers({
     const countries = groupPricingByCountry(Array.isArray(pricingPayload) ? pricingPayload : []);
     const now = new Date().toISOString();
     const includePoolNames = String(process.env.SMSPOOL_INCLUDE_POOL_NAMES || '').toLowerCase() === 'true';
-    const stockMode = String(process.env.SMSPOOL_STOCK_MODE || 'country').toLowerCase();
+    const stockMode = String(process.env.SMSPOOL_STOCK_MODE || 'pool').toLowerCase();
     const stockBatchSize = Math.max(1, Number(process.env.SMSPOOL_STOCK_BATCH_SIZE || 20));
     const previousOfferMap = getPreviousOfferMap(previousSnapshot);
     const stockBatch = new Set(getNextStockBatch(countries, previousOfferMap, stockBatchSize)
@@ -220,15 +238,26 @@ async function fetchProviderOffers({
       const sortedTiers = country.tiers
         .slice()
         .sort((left, right) => left.priceOriginal - right.priceOriginal);
+      const previousOffer = previousOfferMap.get(country.countryIso2);
+      const previousStock = getPreviousStock(previousOffer);
+      const previousTierStockMap = getPreviousTierStockMap(previousOffer);
+      let stockFetchedAt = previousStock.stockFetchedAt;
+      let stockErrorMessage = '';
       const tiers = stockMode === 'pool'
         ? await mapWithConcurrency(sortedTiers, 2, async (tier) => {
           const poolName = poolNames.get(tier.pool);
           const stockResult = stockBatch.has(country.countryIso2)
             ? await fetchStockSafely(baseUrl, apiKey, country.countryId, serviceId, tier.pool)
-            : { stock: 0, errorMessage: '' };
+            : {
+              stock: previousTierStockMap.get(tier.pool) || 0,
+              errorMessage: '',
+            };
+          if (stockResult.errorMessage) stockErrorMessage = stockResult.errorMessage;
           return {
             priceOriginal: tier.priceOriginal,
-            stock: stockResult.stock,
+            stock: stockResult.errorMessage
+              ? (previousTierStockMap.get(tier.pool) || 0)
+              : stockResult.stock,
             providerRef: poolName ? `${tier.pool} ${poolName}` : tier.providerRef,
             stockErrorMessage: stockResult.errorMessage,
           };
@@ -243,11 +272,7 @@ async function fetchProviderOffers({
           };
         });
 
-      const previousOffer = previousOfferMap.get(country.countryIso2);
-      const previousStock = getPreviousStock(previousOffer);
       let inventoryTotal = previousStock.inventoryTotal;
-      let stockFetchedAt = previousStock.stockFetchedAt;
-      let stockErrorMessage = '';
 
       if (stockMode !== 'pool' && tiers.length > 0) {
         if (stockBatch.has(country.countryIso2)) {
@@ -262,7 +287,10 @@ async function fetchProviderOffers({
           : `${tiers[0].providerRef} / cached stock`;
       }
       if (stockMode === 'pool') {
-        stockErrorMessage = tiers.find((tier) => tier.stockErrorMessage)?.stockErrorMessage || '';
+        inventoryTotal = tiers.reduce((total, tier) => total + Number(tier.stock || 0), 0);
+        if (stockBatch.has(country.countryIso2) && !stockErrorMessage) {
+          stockFetchedAt = now;
+        }
       }
       const status = inventoryTotal > 0 ? 'in_stock' : 'out_of_stock';
 

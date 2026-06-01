@@ -157,7 +157,7 @@ describe('provider adapters', () => {
     expect(poolResult.error).toBe('');
     expect(poolResult.offers[0].countryIso2).toBe('GB');
     expect(poolResult.offers[0].inventoryTotal).toBe(42);
-    expect(poolResult.offers[0].tiers[0].providerRef).toBe('3 / total stock');
+    expect(poolResult.offers[0].tiers[0].providerRef).toBe('3');
     process.env.HERO_SMS_API_KEY = originalHeroApiKey;
   });
 
@@ -178,11 +178,11 @@ describe('provider adapters', () => {
         {
           service: 671,
           service_name: 'OpenAI / ChatGPT',
-          country: 2,
-          country_name: 'United Kingdom',
-          short_name: 'GB',
-          pool: 3,
-          price: '0.07',
+            country: 2,
+            country_name: 'United Kingdom',
+            short_name: 'GB',
+            pool: 3,
+            price: '0.07',
         },
       ],
       { success: 1, amount: 100 },
@@ -198,14 +198,15 @@ describe('provider adapters', () => {
             countryIso2: 'BR',
             inventoryTotal: 900,
             lastFetchedAt: '2026-05-01T00:00:00.000Z',
-            metadata: { stockFetchedAt: '2026-05-01T00:00:00.000Z' },
-          },
-          {
-            countryIso2: 'GB',
-            inventoryTotal: 800,
-            lastFetchedAt: '2026-05-02T00:00:00.000Z',
-            metadata: { stockFetchedAt: '2026-05-02T00:00:00.000Z' },
-          },
+              metadata: { stockFetchedAt: '2026-05-01T00:00:00.000Z' },
+            },
+            {
+              countryIso2: 'GB',
+              inventoryTotal: 800,
+              tiers: [{ priceOriginal: 0.07, priceUsd: 0.07, stock: 800, providerRef: '3' }],
+              lastFetchedAt: '2026-05-02T00:00:00.000Z',
+              metadata: { stockFetchedAt: '2026-05-02T00:00:00.000Z' },
+            },
         ],
       },
     });
@@ -217,6 +218,53 @@ describe('provider adapters', () => {
     expect(gb.inventoryTotal).toBe(800);
     expect(gb.metadata.stockRefreshStatus).toBe('cached');
     expect(gb.status).toBe('in_stock');
-    process.env.SMSPOOL_STOCK_BATCH_SIZE = previousStockBatchSize;
+    if (previousStockBatchSize === undefined) {
+      delete process.env.SMSPOOL_STOCK_BATCH_SIZE;
+    } else {
+      process.env.SMSPOOL_STOCK_BATCH_SIZE = previousStockBatchSize;
+    }
+  });
+
+  it('keeps real low-price SMSPool pools when they have stock', async () => {
+    mockFetchSequence([
+      [
+        {
+          service: 671,
+          service_name: 'OpenAI / ChatGPT',
+          country: 12,
+          country_name: 'Philippines',
+          short_name: 'PH',
+          pool: 3,
+          price: '0.02',
+        },
+        {
+          service: 671,
+          service_name: 'OpenAI / ChatGPT',
+          country: 12,
+          country_name: 'Philippines',
+          short_name: 'PH',
+          pool: 7,
+          price: '0.04',
+        },
+      ],
+      { success: 1, amount: 5685 },
+      { success: 1, amount: 0 },
+    ]);
+
+    const poolResult = await fetchSmsPool({
+      mapping: { providerKey: 'smspool', displayName: 'SMSPool', serviceCode: '671', baseUrl: 'https://api.smspool.net' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+
+    expect(poolResult.error).toBe('');
+    expect(poolResult.offers[0].countryIso2).toBe('PH');
+    expect(poolResult.offers[0].minPriceOriginal).toBe(0.02);
+    expect(poolResult.offers[0].inventoryTotal).toBe(5685);
+    expect(poolResult.offers[0].tiers[0]).toMatchObject({
+      priceOriginal: 0.02,
+      stock: 5685,
+      providerRef: '3',
+    });
   });
 });
