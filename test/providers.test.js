@@ -85,6 +85,31 @@ describe('provider adapters', () => {
     expect(result.offers[0].tiers).toHaveLength(2);
   });
 
+  it('merges duplicate NexSMS country routes into one offer', async () => {
+    mockFetchSequence([
+      { data: [{ id: 11, name: 'Philippines' }, { id: 12, name: 'Philippines route 2' }] },
+      { data: [{ code: 'dr', name: 'OpenAI (ChatGPT)' }] },
+      { data: { countryId: 11, countryName: 'Philippines', priceMap: { '0.10': 8, '0.20': 3 } } },
+      { data: { countryId: 12, countryName: 'Philippines', priceMap: { '0.10': 5, '0.30': 2 } } },
+    ]);
+
+    const result = await fetchNexSms({
+      mapping: { providerKey: 'nexsms', displayName: 'NexSMS', serviceCode: 'dr', baseUrl: 'https://api.nexsms.net/api' },
+      exchangeRateService,
+      apiKey: 'key',
+    });
+
+    expect(result.error).toBe('');
+    expect(result.offers).toHaveLength(1);
+    expect(result.offers[0].countryIso2).toBe('PH');
+    expect(result.offers[0].inventoryTotal).toBe(18);
+    expect(result.offers[0].tiers).toEqual([
+      { priceOriginal: 0.1, priceUsd: 0.1, stock: 13, providerRef: '' },
+      { priceOriginal: 0.2, priceUsd: 0.2, stock: 3, providerRef: '' },
+      { priceOriginal: 0.3, priceUsd: 0.3, stock: 2, providerRef: '' },
+    ]);
+  });
+
   it('parses sms-verification-number prices', async () => {
     mockFetchSequence([
       [{ id: 1, name: 'United States' }],
